@@ -93,6 +93,80 @@ python scanner.py -a AAPL
 python scanner.py --parallel 4
 ```
 
+## Configuration
+
+The scanner uses a `config.json` file to store all filtering thresholds and operational settings. You can customize the behavior by modifying this file.
+
+### Key Configuration Sections
+
+#### Stock Filters
+- **Price thresholds**: Minimum stock price and near-miss ranges
+- **Volume requirements**: Minimum trading volume thresholds
+- **Open interest**: Minimum options open interest required
+- **Expected move**: Minimum expected earnings move in dollars
+- **ATM delta limits**: Maximum delta for at-the-money options
+
+#### IV/RV Filters
+- **Pass/Near-miss thresholds**: Implied volatility to realized volatility ratios
+- **Market adjustments**: Dynamic threshold relaxation based on market conditions
+
+#### Term Structure Filters
+- **Pass threshold**: Maximum negative term structure slope allowed
+- **Near-miss threshold**: More lenient term structure requirement for Tier 2
+
+#### Win Rate Filters
+- **Pass threshold**: Minimum historical win rate for passing stocks
+- **Near-miss threshold**: Lower threshold for near-miss categorization
+
+#### Processing Settings
+- **Batch size**: Number of stocks to process in each batch
+- **Max workers**: Maximum parallel processing threads
+- **Timeouts**: Various timeout values for network operations
+- **Retries**: Maximum retry attempts for browser operations
+
+### Example Configuration Changes
+
+To make the scanner more strict (require higher quality stocks):
+```json
+{
+  "stock_filters": {
+    "price": {
+      "minimum": 15.0,
+      "near_miss_minimum": 10.0
+    },
+    "volume": {
+      "minimum": 2000000
+    }
+  },
+  "iv_rv_filters": {
+    "pass_threshold": 1.4,
+    "near_miss_threshold": 1.1
+  }
+}
+```
+
+To make the scanner more lenient (include more stocks):
+```json
+{
+  "stock_filters": {
+    "price": {
+      "minimum": 5.0,
+      "near_miss_minimum": 3.0
+    },
+    "expected_move": {
+      "minimum_dollars": 0.5
+    }
+  }
+}
+```
+
+### Using Custom Config File
+
+You can specify a custom configuration file when running the scanner:
+```bash
+python scanner.py --config my_config.json
+```
+
 ## Features
 
 - Automatically scans for earnings-based options opportunities
@@ -101,6 +175,7 @@ python scanner.py --parallel 4
 - Iron fly strategy calculations
 - Parallel processing support
 - Export results to CSV and JSON formats
+- Fully configurable via JSON config file
 
 ## Requirements
 

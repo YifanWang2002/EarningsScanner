@@ -1,0 +1,100 @@
+{
+  "stock_filters": {
+    "price": {
+      "minimum": 10.0,
+      "near_miss_minimum": 5.0,
+      "near_miss_maximum": 7.0
+    },
+    "volume": {
+      "minimum": 1000000,
+      "near_miss_minimum": 1500000
+    },
+    "open_interest": {
+      "minimum": 2000
+    },
+    "expected_move": {
+      "minimum_dollars": 0.9
+    },
+    "atm_delta": {
+      "maximum": 0.57
+    }
+  },
+  "iv_rv_filters": {
+    "pass_threshold": 1.25,
+    "near_miss_threshold": 1.0,
+    "market_adjustments": {
+      "severe_low_volatility_threshold": 0.75,
+      "extreme_low_volatility_threshold": 0.85,
+      "moderate_low_volatility_threshold": 1.0,
+      "severe_relaxation": 0.35,
+      "extreme_relaxation": 0.25,
+      "moderate_relaxation": 0.15
+    }
+  },
+  "term_structure_filters": {
+    "pass_threshold": -0.004,
+    "near_miss_threshold": -0.006
+  },
+  "win_rate_filters": {
+    "pass_threshold": 50.0,
+    "near_miss_threshold": 40.0
+  },
+  "timing_filters": {
+    "max_days_to_expiry": 9,
+    "allowed_timings": ["Pre Market", "Post Market"]
+  },
+  "processing": {
+    "batch_size": 8,
+    "max_workers": 8,
+    "max_retries": 3,
+    "timeouts": {
+      "earnings_data_fetch": 30,
+      "browser_operations": 10,
+      "webdriver_wait": 8,
+      "thread_timeout": 60
+    }
+  },
+  "data_sources": {
+    "investing_com": {
+      "url": "https://www.investing.com/earnings-calendar/Service/getCalendarFilteredData",
+      "country_code": "5",
+      "user_agents": [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1"
+      ]
+    }
+  },
+  "browser_settings": {
+    "window_size": "1920,1080",
+    "headless": true,
+    "arguments": [
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--disable-extensions",
+      "--disable-infobars",
+      "--blink-settings=imagesEnabled=false",
+      "--js-flags=--expose-gc",
+      "--disable-browser-side-navigation",
+      "--disable-3d-apis",
+      "--disable-accelerated-2d-canvas",
+      "--disable-web-security",
+      "--disable-features=NetworkPrediction,PrefetchDNSOverride",
+      "--disable-sync",
+      "--mute-audio",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--memory-model=low",
+      "--disable-translate",
+      "--disable-plugins",
+      "--disable-software-rasterizer"
+    ],
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+  },
+  "logging": {
+    "log_dir": "logs",
+    "format": "%(asctime)s - %(levelname)s - %(message)s"
+  }
+}

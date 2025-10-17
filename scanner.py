@@ -8,10 +8,12 @@ import argparse
 import logging
 import sys
 import time
+import json
+import os
 from datetime import datetime, timezone
 
 from utils.logging_utils import setup_logging
-from core.scanner import EarningsScanner
+from core.scanner import EarningsScanner, load_config
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -60,6 +62,12 @@ def main():
         help='Repeat scan every N hours (e.g., 1 for hourly scans)',
         type=int
     )
+    parser.add_argument(
+        '--config', '-c',
+        help='Path to configuration file (default: config.json)',
+        type=str,
+        default='config.json'
+    )
     args = parser.parse_args()
  
     setup_logging(log_dir="logs")
@@ -79,7 +87,7 @@ def main():
         logger.info(f'No date provided. Using current UTC time: '
                     f'{now.strftime("%Y-%m-%d %H:%M:%S %Z")}')
 
-    scanner = EarningsScanner()
+    scanner = EarningsScanner(config_path=args.config)
     # Check if we're analyzing a specific ticker instead of running a full scan
     if args.analyze:
         ticker = args.analyze.strip().upper()

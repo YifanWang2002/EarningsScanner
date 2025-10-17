@@ -7,6 +7,7 @@ import re
 import time
 import csv
 import json
+import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
@@ -39,6 +40,31 @@ logger.addHandler(handler)
 core.yfinance_cookie_patch.patch_yfdata_cookie_basic()
 session = curl_requests.Session(impersonate="chrome")
 console = Console()
+
+def load_config(config_path: str = "config.json") -> Dict:
+    """
+    Load configuration from JSON file.
+
+    Args:
+        config_path: Path to the configuration file
+
+    Returns:
+        Dictionary containing all configuration values
+
+    Raises:
+        FileNotFoundError: If config file doesn't exist
+        json.JSONDecodeError: If config file is not valid JSON
+    """
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        logger.info(f"Loaded configuration from {config_path}")
+        return config
+    except json.JSONDecodeError as e:
+        raise json.JSONDecodeError(f"Invalid JSON in configuration file: {e}", e.doc, e.pos)
 
 class EarningsScanner:
     # Initialize class variables, only one __init__ method should exist
@@ -223,13 +249,18 @@ class EarningsScanner:
     
     
     # Initialize class variables, only one __init__ method should exist
-    def __init__(self, eastern_tz=pytz.timezone('US/Eastern')):  # Constructor with eastern timezone parameter
-        # Default parameter values initialization
+    def __init__(self, eastern_tz=pytz.timezone('US/Eastern'), config_path: str = "config.json"):  # Constructor with eastern timezone parameter
+        # Load configuration
+        self.config = load_config(config_path)
+
+        # Default parameter values initialization from config
         self.eastern_tz = eastern_tz
-        self.batch_size = 8  # Default batch size
-        # Default threshold values for IV/RV ratio
-        self.iv_rv_pass_threshold = 1.25
-        self.iv_rv_near_miss_threshold = 1.0
+        self.batch_size = self.config["processing"]["batch_size"]
+
+        # Threshold values from config
+        self.iv_rv_pass_threshold = self.config["iv_rv_filters"]["pass_threshold"]
+        self.iv_rv_near_miss_threshold = self.config["iv_rv_filters"]["near_miss_threshold"]
+
         # Initialize the analyzer
         self.analyzer = OptionsAnalyzer()
     
@@ -242,16 +273,19 @@ class EarningsScanner:
     
     def _get_investing_earnings_data(self, date: datetime.date) -> List[Dict]:
         """Get earnings data from Investing.com"""
-        url = "https://www.investing.com/earnings-calendar/Service/getCalendarFilteredData"
+        investing_config = self.config["data_sources"]["investing_com"]
+        url = investing_config["url"]
+        user_agents = investing_config["user_agents"]
+
         headers = {
             'User-Agent': 'Mozilla/5.0',
             'X-Requested-With': 'XMLHttpRequest',
             'Content-Type': 'application/x-www-form-urlencoded',
             'Referer': 'https://www.investing.com/earnings-calendar/'
         }
-        
+
         payload = {
-            'country[]': '5',
+            'country[]': investing_config["country_code"],
             'dateFrom': date.strftime('%Y-%m-%d'),
             'dateTo': date.strftime('%Y-%m-%d'),
             'currentTab': 'custom',
@@ -260,16 +294,10 @@ class EarningsScanner:
         
         try:
             # Add a user-agent rotation to avoid blocking
-            user_agents = [
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
-                'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36',
-                'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1'
-            ]
             import random
             headers['User-Agent'] = random.choice(user_agents)
             
-            response = requests.post(url, headers=headers, data=payload, timeout=10)
+            response = requests.post(url, headers=headers, data=payload, timeout=self.config["processing"]["timeouts"]["earnings_data_fetch"])
             response.raise_for_status()  # Raise an exception for HTTP errors
             
             # Try to parse JSON response
@@ -317,7 +345,7 @@ class EarningsScanner:
 
     _driver = None  # Reusable browser instance
     _driver_lock = None  # Thread lock for browser access
-    _max_retries = 3  # Number of retry attempts for browser operations
+    _max_retries = None  # Number of retry attempts for browser operations
     
     def _initialize_browser(self):
         """Initialize or reinitialize the browser with optimized settings"""
@@ -332,37 +360,21 @@ class EarningsScanner:
                 pass
             self._driver = None
         
+        browser_config = self.config["browser_settings"]
         options = webdriver.ChromeOptions()
-        options.add_argument("--window-size=1920,1080")
-        options.add_argument('--headless')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--disable-gpu')
-        options.add_argument('--disable-extensions')
-        options.add_argument('--disable-infobars')
-        options.add_argument('--blink-settings=imagesEnabled=false')
-        options.add_argument('--js-flags=--expose-gc')
-        options.add_argument('--disable-dev-shm-usage')
-        
-        # Additional memory optimization
-        options.add_argument('--disable-browser-side-navigation')
-        options.add_argument('--disable-3d-apis')
-        options.add_argument('--disable-accelerated-2d-canvas')
-        options.add_argument('--disable-web-security')
-        options.add_argument('--disable-features=NetworkPrediction,PrefetchDNSOverride')
-        options.add_argument('--disable-sync')
-        options.add_argument('--mute-audio')
-        options.add_argument('--no-first-run')
-        options.add_argument('--no-default-browser-check')
-        options.add_argument('--memory-model=low')
-        options.add_argument('--disable-translate')
-        options.add_argument('--disable-plugins')
-        options.add_argument('--disable-software-rasterizer')
-        options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
+        options.add_argument(f"--window-size={browser_config['window_size']}")
+        options.add_argument('--headless' if browser_config['headless'] else '--no-headless')
+
+        # Add all configured browser arguments
+        for arg in browser_config['arguments']:
+            options.add_argument(arg)
+
+        # Set user agent from config
+        options.add_argument(f'--user-agent={browser_config["user_agent"]}')
         
         service = Service(ChromeDriverManager().install())
         self._driver = webdriver.Chrome(service=service, options=options)
-        self._driver.set_page_load_timeout(10)  # Even shorter timeout
+        self._driver.set_page_load_timeout(self.config["processing"]["timeouts"]["browser_operations"])
         
     def check_mc_overestimate(self, ticker: str) -> Dict[str, any]:
         """Get Market Chameleon overestimate data with retry mechanism"""
@@ -387,7 +399,7 @@ class EarningsScanner:
             
             # Retry loop
             retries = 0
-            while retries < self._max_retries:
+            while retries < self.config["processing"]["max_retries"]:
                 try:
                     # Check if browser needs reinitializing
                     try:
@@ -401,7 +413,7 @@ class EarningsScanner:
                     url = f"https://marketchameleon.com/Overview/{ticker}/Earnings/Earnings-Charts/"
                     self._driver.get(url)
                     
-                    wait = WebDriverWait(self._driver, 8)  # Even shorter timeout
+                    wait = WebDriverWait(self._driver, self.config["processing"]["timeouts"]["webdriver_wait"])
                     section = wait.until(
                         EC.presence_of_element_located((By.CLASS_NAME, "symbol-section-header-descr"))
                     )
@@ -449,7 +461,7 @@ class EarningsScanner:
                     time.sleep(1)
             
             # If we get here, we've exhausted retries
-            logger.error(f"Failed to get MC data for {ticker} after {self._max_retries} attempts")
+            logger.error(f"Failed to get MC data for {ticker} after {self.config['processing']['max_retries']} attempts")
             return default_result
 
     def validate_stock(self, stock: Dict) -> Dict:
@@ -486,12 +498,13 @@ class EarningsScanner:
                 }
                 
             metrics['price'] = current_price
-            if current_price < 10.0:
-                logger.debug(f"{ticker}: Failed price check - ${current_price:.2f} < $10.00")
+            price_min = self.config["stock_filters"]["price"]["minimum"]
+            if current_price < price_min:
+                logger.debug(f"{ticker}: Failed price check - ${current_price:.2f} < ${price_min:.2f}")
                 return {
                     'pass': False,
                     'near_miss': False,
-                    'reason': f"Price ${current_price:.2f} < $10.00",
+                    'reason': f"Price ${current_price:.2f} < ${price_min:.2f}",
                     'metrics': metrics
                 }
 
@@ -527,8 +540,9 @@ class EarningsScanner:
             chain = yf_ticker.option_chain(options_dates[0])
             total_oi = chain.calls['openInterest'].sum() + chain.puts['openInterest'].sum()
             metrics['open_interest'] = total_oi
-            
-            if total_oi < 2000:
+
+            oi_min = self.config["stock_filters"]["open_interest"]["minimum"]
+            if total_oi < oi_min:
                 logger.debug(f"{ticker}: Insufficient open interest - {total_oi}")
                 return {
                     'pass': False,
@@ -554,12 +568,13 @@ class EarningsScanner:
             logger.debug(f"Validating {ticker}: Checking term structure...")
             term_slope = analysis.get('term_slope', 0)
             metrics['term_structure'] = term_slope
-            if term_slope > -0.004:
-                logger.debug(f"{ticker}: Failed term structure - {term_slope:.4f} > -0.004")
+            term_pass_threshold = self.config["term_structure_filters"]["pass_threshold"]
+            if term_slope > term_pass_threshold:
+                logger.debug(f"{ticker}: Failed term structure - {term_slope:.4f} > {term_pass_threshold}")
                 return {
                     'pass': False,
                     'near_miss': False,
-                    'reason': f"Term structure {term_slope:.4f} > -0.004",
+                    'reason': f"Term structure {term_slope:.4f} > {term_pass_threshold}",
                     'metrics': metrics
                 }
                 
@@ -579,11 +594,12 @@ class EarningsScanner:
                     metrics['atm_call_delta'] = call_delta_float
                     metrics['atm_put_delta'] = put_delta_float
                     
-                    if call_delta_float > 0.57 or abs(put_delta_float) > 0.57:
+                    delta_max = self.config["stock_filters"]["atm_delta"]["maximum"]
+                    if call_delta_float > delta_max or abs(put_delta_float) > delta_max:
                         return {
                             'pass': False,
                             'near_miss': False,
-                            'reason': f"ATM options have delta > 0.57 (call: {call_delta_float:.2f}, put: {put_delta_float:.2f})",
+                            'reason': f"ATM options have delta > {delta_max} (call: {call_delta_float:.2f}, put: {put_delta_float:.2f})",
                             'metrics': metrics
                         }
                 except (TypeError, ValueError) as e:
@@ -610,13 +626,14 @@ class EarningsScanner:
                     metrics['expected_move_pct'] = move_pct * 100
                     
                     logger.debug(f"Calculated expected move for {ticker}: ${expected_move_dollars:.2f} ({move_pct*100:.2f}%)")
-                    
-                    # Reject if expected move is less than $0.90
-                    if expected_move_dollars < 0.9:
+
+                    # Reject if expected move is less than configured minimum
+                    expected_move_min = self.config["stock_filters"]["expected_move"]["minimum_dollars"]
+                    if expected_move_dollars < expected_move_min:
                         return {
                             'pass': False,
                             'near_miss': False,
-                            'reason': f"Expected move ${expected_move_dollars:.2f} < $0.90",
+                            'reason': f"Expected move ${expected_move_dollars:.2f} < ${expected_move_min}",
                             'metrics': metrics
                         }
                 except (ValueError, AttributeError, TypeError) as e:
@@ -641,12 +658,13 @@ class EarningsScanner:
                             metrics['expected_move_pct'] = (expected_move_dollars / current_price) * 100
                             
                             logger.info(f"Using fallback method for expected move on {ticker}: ${expected_move_dollars:.2f} ({metrics['expected_move_pct']:.2f}%)")
-                            
-                            if expected_move_dollars < 0.9:
+
+                            expected_move_min = self.config["stock_filters"]["expected_move"]["minimum_dollars"]
+                            if expected_move_dollars < expected_move_min:
                                 return {
                                     'pass': False,
                                     'near_miss': False,
-                                    'reason': f"Expected move (fallback) ${expected_move_dollars:.2f} < $0.90",
+                                    'reason': f"Expected move (fallback) ${expected_move_dollars:.2f} < ${expected_move_min}",
                                     'metrics': metrics
                                 }
                     except Exception as e2:
@@ -656,19 +674,23 @@ class EarningsScanner:
             # Price check
             current_price = yf_ticker.history(period='1d')['Close'].iloc[-1]
             metrics['price'] = current_price
-            if current_price < 5.0:
-                failed_checks.append(f"Price ${current_price:.2f} < $5.00")
-            elif current_price < 7.0:
-                near_miss_checks.append(f"Price ${current_price:.2f} < $7.00")
+            price_near_miss_min = self.config["stock_filters"]["price"]["near_miss_minimum"]
+            price_near_miss_max = self.config["stock_filters"]["price"]["near_miss_maximum"]
+            if current_price < price_near_miss_min:
+                failed_checks.append(f"Price ${current_price:.2f} < ${price_near_miss_min:.2f}")
+            elif current_price < price_near_miss_max:
+                near_miss_checks.append(f"Price ${current_price:.2f} < ${price_near_miss_max:.2f}")
                 
             # Volume check
             avg_volume = yf_ticker.history(period='1mo')['Volume'].mean()
-                
+
             metrics['volume'] = avg_volume
-            if avg_volume < 1_000_000:
-                failed_checks.append(f"Volume {avg_volume:,.0f} < 1M")
-            elif avg_volume < 1_500_000:
-                near_miss_checks.append(f"Volume {avg_volume:,.0f} < 1.5M") 
+            volume_min = self.config["stock_filters"]["volume"]["minimum"]
+            volume_near_miss_min = volume_min * 1.5  # 150% of minimum for near miss
+            if avg_volume < volume_min:
+                failed_checks.append(f"Volume {avg_volume:,.0f} < {volume_min:,}")
+            elif avg_volume < volume_near_miss_min:
+                near_miss_checks.append(f"Volume {avg_volume:,.0f} < {volume_near_miss_min:,.0f}")
 
             # Market Chameleon check - only if we haven't failed already
             if not failed_checks:  # Skip if already failing other checks
@@ -680,12 +702,14 @@ class EarningsScanner:
                 metrics['win_rate'] = win_rate
                 metrics['win_quarters'] = quarters
                 
-                # Apply the new threshold of 50%
-                if win_rate < 50.0:
-                    if win_rate >= 40.0:  # Between 40-50% is now a near miss
-                        near_miss_checks.append(f"Winrate {win_rate}% < 50% (over {quarters} earnings)")
-                    else:  # Below 40% is still a failure
-                        failed_checks.append(f"Winrate {win_rate}% < 40% (over {quarters} earnings)")
+                # Apply the configured win rate thresholds
+                win_rate_pass_threshold = self.config["win_rate_filters"]["pass_threshold"]
+                win_rate_near_miss_threshold = self.config["win_rate_filters"]["near_miss_threshold"]
+                if win_rate < win_rate_pass_threshold:
+                    if win_rate >= win_rate_near_miss_threshold:
+                        near_miss_checks.append(f"Winrate {win_rate}% < {win_rate_pass_threshold}% (over {quarters} earnings)")
+                    else:
+                        failed_checks.append(f"Winrate {win_rate}% < {win_rate_near_miss_threshold}% (over {quarters} earnings)")
             else:
                 # Add placeholders if we skip
                 metrics['win_rate'] = 0.0
@@ -707,14 +731,15 @@ class EarningsScanner:
             is_passing = len(failed_checks) == 0 and len(near_miss_checks) == 0
             
             # Is this a near miss with good term structure?
-            is_near_miss_good_term = (len(failed_checks) == 0 and 
-                                      len(near_miss_checks) > 0 and 
-                                      term_slope <= -0.006)
+            term_near_miss_threshold = self.config["term_structure_filters"]["near_miss_threshold"]
+            is_near_miss_good_term = (len(failed_checks) == 0 and
+                                      len(near_miss_checks) > 0 and
+                                      term_slope <= term_near_miss_threshold)
             
             # Assign tiers:
             # - Tier 1: Original "recommended" stocks (passing all criteria)
-            # - Tier 2: Near misses with term structure <= -0.006
-            # - Near misses: The rest (term structure must still be <= -0.004)
+            # - Tier 2: Near misses with term structure <= configured near miss threshold
+            # - Near misses: The rest (term structure must still be <= pass threshold)
             if is_passing:
                 tier = 1
                 metrics['tier'] = 1
@@ -774,18 +799,23 @@ class EarningsScanner:
                 logger.info(f"Current SPY IV/RV ratio: {spy_iv_rv:.2f}")
                 
                 # Three-tiered threshold system based on market conditions
-                if spy_iv_rv <= 0.75:  # Severe low volatility (new tier)
-                    self.iv_rv_pass_threshold = 0.90  # Relaxed by 0.35
-                    self.iv_rv_near_miss_threshold = 0.65  # Relaxed by 0.35
-                    logger.info(f"Market IV/RV is severely low ({spy_iv_rv:.2f}). Relaxing IV/RV thresholds by 0.35")
-                elif spy_iv_rv <= 0.85:  # Extreme low volatility
-                    self.iv_rv_pass_threshold = 1.00  # Relaxed by 0.25
-                    self.iv_rv_near_miss_threshold = 0.75  # Relaxed by 0.25
-                    logger.info(f"Market IV/RV is extremely low ({spy_iv_rv:.2f}). Relaxing IV/RV thresholds by 0.25")
-                elif spy_iv_rv <= 1.0:  # Moderately low volatility
-                    self.iv_rv_pass_threshold = 1.10  # Relaxed by 0.15
-                    self.iv_rv_near_miss_threshold = 0.85  # Relaxed by 0.15
-                    logger.info(f"Market IV/RV is low ({spy_iv_rv:.2f}). Relaxing IV/RV thresholds by 0.15")
+                market_adjustments = self.config["iv_rv_filters"]["market_adjustments"]
+
+                if spy_iv_rv <= market_adjustments["severe_low_volatility_threshold"]:
+                    relaxation_amount = market_adjustments["severe_relaxation"]
+                    self.iv_rv_pass_threshold = self.config["iv_rv_filters"]["pass_threshold"] - relaxation_amount
+                    self.iv_rv_near_miss_threshold = self.config["iv_rv_filters"]["near_miss_threshold"] - relaxation_amount
+                    logger.info(f"Market IV/RV is severely low ({spy_iv_rv:.2f}). Relaxing IV/RV thresholds by {relaxation_amount}")
+                elif spy_iv_rv <= market_adjustments["extreme_low_volatility_threshold"]:
+                    relaxation_amount = market_adjustments["extreme_relaxation"]
+                    self.iv_rv_pass_threshold = self.config["iv_rv_filters"]["pass_threshold"] - relaxation_amount
+                    self.iv_rv_near_miss_threshold = self.config["iv_rv_filters"]["near_miss_threshold"] - relaxation_amount
+                    logger.info(f"Market IV/RV is extremely low ({spy_iv_rv:.2f}). Relaxing IV/RV thresholds by {relaxation_amount}")
+                elif spy_iv_rv <= market_adjustments["moderate_low_volatility_threshold"]:
+                    relaxation_amount = market_adjustments["moderate_relaxation"]
+                    self.iv_rv_pass_threshold = self.config["iv_rv_filters"]["pass_threshold"] - relaxation_amount
+                    self.iv_rv_near_miss_threshold = self.config["iv_rv_filters"]["near_miss_threshold"] - relaxation_amount
+                    logger.info(f"Market IV/RV is low ({spy_iv_rv:.2f}). Relaxing IV/RV thresholds by {relaxation_amount}")
                 else:  # Normal market conditions
                     logger.info(f"Normal market IV/RV ({spy_iv_rv:.2f}). Using standard thresholds")
                 
@@ -1012,7 +1042,7 @@ class EarningsScanner:
                         
                         # Get results with timeout to prevent hanging
                         try:
-                            post_stocks = post_future.result(timeout=30)  # 30 second timeout
+                            post_stocks = post_future.result(timeout=self.config["processing"]["timeouts"]["earnings_data_fetch"])
                             progress.update(task, advance=1, description=f"Post-market: {len(post_stocks)} tickers")
                         except Exception as e:
                             console.print(f"[red]✗ Error fetching post-market earnings: {e}[/red]")
@@ -1021,7 +1051,7 @@ class EarningsScanner:
                             progress.update(task, advance=1)
                             
                         try:
-                            pre_stocks = pre_future.result(timeout=30)  # 30 second timeout
+                            pre_stocks = pre_future.result(timeout=self.config["processing"]["timeouts"]["earnings_data_fetch"])
                             progress.update(task, advance=1, description=f"Pre-market: {len(pre_stocks)} tickers")
                         except Exception as e:
                             console.print(f"[red]✗ Error fetching pre-market earnings: {e}[/red]")
@@ -1074,7 +1104,7 @@ class EarningsScanner:
         # Process in parallel if workers specified
         if workers > 0:
             # Limit max workers for stability (especially with browser operations)
-            effective_workers = min(workers, 8)  # Cap at 8 workers max for stability
+            effective_workers = min(workers, self.config["processing"]["max_workers"])
             console.print(f"  • Processing mode: [cyan]Parallel ({effective_workers} workers)[/cyan]")
             logger.info(f"Using parallel processing with {effective_workers} workers")
             
@@ -1106,7 +1136,7 @@ class EarningsScanner:
                         stock = candidates[i]
                         ticker = stock['ticker']
                         try:
-                            result = future.result(timeout=60)  # Add timeout to prevent hanging threads
+                            result = future.result(timeout=self.config["processing"]["timeouts"]["thread_timeout"])
                             
                             # Store all analyzed tickers
                             all_analyzed_tickers[ticker] = result.get('metrics', {})
