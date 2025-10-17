@@ -1,0 +1,13 @@
+beautifulsoup4>=4.13.3
+numpy>=2.2.3
+pandas>=2.2.3
+requests>=2.32.3
+scipy>=1.15.2
+yfinance>=0.2.54
+selenium>=4.15.2
+pytz>=2024.1
+tqdm>=4.66.2
+rich>=13.7.0
+yahooquery>=2.3.7
+webdriver-manager>=4.0.0
+curl_cffi==0.10.0
