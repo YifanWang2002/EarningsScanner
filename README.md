@@ -17,14 +17,6 @@ cd EarningsScanner
 4. Extract the downloaded ZIP file to your desired location
 5. Navigate to the extracted folder in your terminal/command prompt
 
-### Option 3: Download Individual Files
-If you prefer to download specific files:
-1. Visit: https://github.com/YifanWang2002/EarningsScanner
-2. Navigate to the files you need
-3. Click on each file to view it
-4. Use "Raw" button to get the plain text content
-5. Save the content to local files with appropriate names
-
 ## Installation
 
 ### 1. Install Python
